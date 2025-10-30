@@ -8,7 +8,7 @@ from torch.nn import LayerNorm, Linear
 from tqdm import tqdm
 import numpy as np
 import torch_geometric.transforms as T
-from torch_geometric.loader import RandomNodeLoader
+from torch_geometric.loader import NeighborLoader
 from torch_geometric.nn import SAGEConv, GCNConv, GATConv
 from torch_geometric.utils import index_to_mask
 
@@ -101,6 +101,9 @@ parser.add_argument('--gnn', type=str, default='gcn')
 parser.add_argument('--ln', action='store_true')
 parser.add_argument('--jk', action='store_true')
 parser.add_argument('--res', action='store_true')
+parser.add_argument('--batch_size', type=int, default=1024, help='Batch size for NeighborLoader')
+parser.add_argument('--num_neighbors', type=int, nargs='+', default=[10, 10, 10, 10, 10], 
+                    help='Number of neighbors to sample per layer (list of integers)')
 args = parser.parse_args()
 print(args)
 
@@ -117,11 +120,23 @@ split_idx = dataset.get_idx_split()
 for split in ['train', 'valid', 'test']:
     data[f'{split}_mask'] = index_to_mask(split_idx[split], data.y.shape[0])
 
-train_loader = RandomNodeLoader(data, num_parts=10, shuffle=True,
-                                num_workers=5)
-# Increase the num_parts of the test loader if you cannot fit
-# the full batch graph into your GPU:
-test_loader = RandomNodeLoader(data, num_parts=1, num_workers=5)
+train_loader = NeighborLoader(
+    data, 
+    num_neighbors=args.num_neighbors,
+    batch_size=args.batch_size,
+    input_nodes=data.train_mask,
+    shuffle=True,
+    num_workers=5
+)
+
+test_loader = NeighborLoader(
+    data,
+    num_neighbors=args.num_neighbors,
+    batch_size=args.batch_size,
+    input_nodes=None,  # Use all nodes for testing
+    shuffle=False,
+    num_workers=5
+)
 
 model = GNN(
     in_channels=dataset.num_features,
